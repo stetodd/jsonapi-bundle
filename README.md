@@ -14,10 +14,10 @@ Register in `config/bundles.php`:
 Stetodd\JsonApiBundle\StetoddJsonApiBundle::class => ['all' => true],
 ```
 
-Configure in `config/packages/stetodd_jsonapi.yaml`:
+Configure in `config/packages/stetodd_json_api.yaml`:
 
 ```yaml
-stetodd_jsonapi:
+stetodd_json_api:
     base_url: 'https://api.example.com'
     # recursion_limit: 4
     # relationship_routes:
