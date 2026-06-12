@@ -1,0 +1,35 @@
+{
+    "name": "stetodd/jsonapi-bundle",
+    "description": "JSON:API request mapping and response serialisation for Symfony, built on league/fractal",
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.4",
+        "league/fractal": "^0.20.1",
+        "symfony/config": "^7.2|^8.0",
+        "symfony/dependency-injection": "^7.2|^8.0",
+        "symfony/event-dispatcher": "^7.2|^8.0",
+        "symfony/http-foundation": "^7.2|^8.0",
+        "symfony/http-kernel": "^7.2|^8.0",
+        "symfony/routing": "^7.2|^8.0",
+        "symfony/serializer": "^7.2|^8.0",
+        "symfony/string": "^7.2|^8.0",
+        "symfony/translation-contracts": "^3.0",
+        "symfony/validator": "^7.2|^8.0"
+    },
+    "suggest": {
+        "doctrine/persistence": "Allows transformer resolution to unwrap Doctrine entity proxies"
+    },
+    "autoload": {
+        "psr-4": {
+            "Stetodd\\JsonApiBundle\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "0.1.x-dev"
+        }
+    }
+}
