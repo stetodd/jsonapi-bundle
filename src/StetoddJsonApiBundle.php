@@ -6,6 +6,7 @@ namespace Stetodd\JsonApiBundle;
 
 use Stetodd\JsonApiBundle\Contract\ResourceTransformerInterface;
 use Stetodd\JsonApiBundle\Request\ArgumentResolver\JsonApiValueResolver;
+use Stetodd\JsonApiBundle\Request\Query\SortResolver;
 use Stetodd\JsonApiBundle\Response\JsonApiResponder;
 use Stetodd\JsonApiBundle\Response\TransformerRegistry;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
@@ -49,6 +50,13 @@ final class StetoddJsonApiBundle extends AbstractBundle
 
         $services->set(TransformerRegistry::class)
             ->args([tagged_iterator(self::TRANSFORMER_TAG)]);
+
+        $services->set(SortResolver::class)
+            ->args([
+                service(TransformerRegistry::class),
+                service('request_stack'),
+            ])
+            ->public();
 
         $services->set(JsonApiValueResolver::class)
             ->args([

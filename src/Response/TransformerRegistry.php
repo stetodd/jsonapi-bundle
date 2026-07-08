@@ -6,6 +6,7 @@ namespace Stetodd\JsonApiBundle\Response;
 
 use League\Fractal\TransformerAbstract;
 use Stetodd\JsonApiBundle\Contract\ResourceTransformerInterface;
+use Stetodd\JsonApiBundle\Request\Query\JsonApiSortable;
 
 class TransformerRegistry
 {
@@ -32,5 +33,25 @@ class TransformerRegistry
         }
 
         return $this->transformers[$key];
+    }
+
+    /**
+     * The sort fields the resource accepts, from its #[JsonApiSortable] attribute
+     * (empty when the resource declares none).
+     *
+     * @return list<string>
+     */
+    public function sortableFields(string $key): array
+    {
+        $reflection = new \ReflectionClass($this->getTransformer($key));
+
+        $fields = [];
+        foreach ($reflection->getAttributes(JsonApiSortable::class) as $attribute) {
+            foreach ($attribute->newInstance()->fields as $field) {
+                $fields[] = $field;
+            }
+        }
+
+        return $fields;
     }
 }

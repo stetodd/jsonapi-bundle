@@ -12,11 +12,13 @@ use League\Fractal\Resource\NullResource;
 use League\Fractal\TransformerAbstract;
 use Stetodd\JsonApiBundle\Contract\IdentifiableResourceInterface;
 use Stetodd\JsonApiBundle\Contract\PagedResultInterface;
+use Stetodd\JsonApiBundle\Request\Query\JsonApiQuery;
 use Stetodd\JsonApiBundle\Resource\ResourceKeyGenerator;
 use Stetodd\JsonApiBundle\Response\Pagination\PagedResultPaginationAdapter;
 use Stetodd\JsonApiBundle\Response\Serializer\UrlGeneratorAwareJsonApiSerializer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -39,17 +41,18 @@ final class JsonApiResponder
 
     public function item(?IdentifiableResourceInterface $data, array $meta = [], int $status = 200, array $headers = [], array $context = []): JsonResponse
     {
-        $manager = $this->createManager();
-
         if ($data === null) {
-            $data = $manager->createData(new NullResource())->toArray();
+            $data = $this->createManager()->createData(new NullResource())->toArray();
 
             return $this->json($data, $status, $headers, $context);
         }
 
+        $transformer = $this->getTransformer($data::class);
+        $manager = $this->createManager($transformer);
+
         $resource = new Item(
             $data,
-            $this->getTransformer($data::class),
+            $transformer,
             ResourceKeyGenerator::generateResourceKey($data),
         );
         $resource->setMeta($meta);
@@ -87,11 +90,12 @@ final class JsonApiResponder
         array $headers = [],
         array $context = [],
     ): JsonResponse {
-        $manager = $this->createManager();
+        $transformer = $this->getTransformer($dataType);
+        $manager = $this->createManager($transformer);
 
         $resource = new Collection(
             $collection,
-            $this->getTransformer($dataType),
+            $transformer,
             ResourceKeyGenerator::generateResourceKey($dataType),
         );
 
@@ -166,7 +170,7 @@ final class JsonApiResponder
         return $classString;
     }
 
-    private function createManager(): Manager
+    private function createManager(?TransformerAbstract $transformer = null): Manager
     {
         $manager = new Manager();
         $manager->setRecursionLimit($this->recursionLimit);
@@ -180,14 +184,47 @@ final class JsonApiResponder
         );
 
         $request = $this->requestStack->getCurrentRequest();
-        if ($request !== null && $request->query->has('include')) {
-            $includes = $request->query->get('include', null);
-            if (is_string($includes)) {
-                $manager->parseIncludes($includes);
+        if ($request === null) {
+            return $manager;
+        }
+
+        $query = JsonApiQuery::fromRequest($request);
+
+        if ($query->hasIncludes()) {
+            if ($transformer !== null) {
+                $this->assertIncludesAreSupported($query->includes, $transformer);
             }
+            $manager->parseIncludes($query->includes);
+        }
+
+        if ($query->hasFields()) {
+            $manager->parseFieldsets($query->fields);
         }
 
         return $manager;
+    }
+
+    /**
+     * Per the JSON:API spec a request with an unsupported include path MUST be
+     * rejected with a 400. Validated against the root transformer's available and
+     * default includes (top-level path segment).
+     *
+     * @param list<string> $includes
+     */
+    private function assertIncludesAreSupported(array $includes, TransformerAbstract $transformer): void
+    {
+        $supported = array_merge($transformer->getAvailableIncludes(), $transformer->getDefaultIncludes());
+
+        foreach ($includes as $include) {
+            $root = explode('.', $include, 2)[0];
+            if (!in_array($root, $supported, true)) {
+                throw new BadRequestHttpException(sprintf(
+                    'Unsupported include path "%s". Supported includes: %s.',
+                    $include,
+                    implode(', ', $supported),
+                ));
+            }
+        }
     }
 
     /**
