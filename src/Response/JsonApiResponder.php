@@ -9,6 +9,7 @@ use League\Fractal\Manager;
 use League\Fractal\Resource\Collection;
 use League\Fractal\Resource\Item;
 use League\Fractal\Resource\NullResource;
+use League\Fractal\Resource\ResourceAbstract;
 use League\Fractal\TransformerAbstract;
 use Stetodd\JsonApiBundle\Contract\IdentifiableResourceInterface;
 use Stetodd\JsonApiBundle\Contract\PagedResultInterface;
@@ -113,6 +114,19 @@ final class JsonApiResponder
         return $this->json($data, $status, $headers, $context);
     }
 
+    /**
+     * Serialize a prepared Fractal resource (Item, Collection or NullResource) —
+     * e.g. one produced by a transformer's include method. Query features (includes,
+     * fieldsets) are honoured against the resource's own transformer.
+     */
+    public function fractalResource(ResourceAbstract $resource, int $status = 200, array $headers = [], array $context = []): JsonResponse
+    {
+        $transformer = $resource->getTransformer();
+        $manager = $this->createManager($transformer instanceof TransformerAbstract ? $transformer : null);
+
+        return $this->json($manager->createData($resource)->toArray(), $status, $headers, $context);
+    }
+
     public function collectionInclude(iterable $collection, int $status = 200, array $headers = [], array $context = []): JsonResponse
     {
         return $this->json(['data' => array_map(
@@ -172,6 +186,9 @@ final class JsonApiResponder
 
     private function createManager(?TransformerAbstract $transformer = null): Manager
     {
+        $request = $this->requestStack->getCurrentRequest();
+        $query = $request !== null ? JsonApiQuery::fromRequest($request) : new JsonApiQuery();
+
         $manager = new Manager();
         $manager->setRecursionLimit($this->recursionLimit);
         $manager->setSerializer(
@@ -180,15 +197,10 @@ final class JsonApiResponder
                 $this->urlGenerator,
                 $this->relationshipSelfRoutePattern,
                 $this->relationshipRelatedRoutePattern,
+                $this->transformerRegistry,
+                $query->fields,
             )
         );
-
-        $request = $this->requestStack->getCurrentRequest();
-        if ($request === null) {
-            return $manager;
-        }
-
-        $query = JsonApiQuery::fromRequest($request);
 
         if ($query->hasIncludes()) {
             if ($transformer !== null) {
@@ -234,14 +246,17 @@ final class JsonApiResponder
     {
         $request = $this->requestStack->getCurrentRequest();
         if ($request === null) {
-            return fn (int $page): string => sprintf('?page=%d', $page);
+            return fn (int $page): string => sprintf('?page%%5Bnumber%%5D=%d', $page);
         }
 
         return function (int $page) use ($request): string {
             $route = (string) $request->attributes->get('_route');
             $inputParams = (array) $request->attributes->get('_route_params');
             $newParams = array_merge($inputParams, $request->query->all());
-            $newParams['page'] = $page;
+
+            // JSON:API pagination family: swap the page number, keep e.g. page[size].
+            $currentPage = $newParams['page'] ?? [];
+            $newParams['page'] = array_merge(is_array($currentPage) ? $currentPage : [], ['number' => $page]);
 
             return $this->urlGenerator->generate($route, $newParams, UrlGeneratorInterface::ABSOLUTE_URL);
         };

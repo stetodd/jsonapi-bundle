@@ -36,7 +36,104 @@ return $this->responder->collection(Palette::class, $palettes, $pagedResult);
 
 Resources implement `Contract\IdentifiableResourceInterface` (`getId(): \Stringable|string`). Each resource gets a transformer extending `League\Fractal\TransformerAbstract` and implementing `Contract\ResourceTransformerInterface`; transformers are auto-registered via autoconfiguration — no tagging needed.
 
-Paginated collections take any `Contract\PagedResultInterface`. The `?include=` query parameter is honoured per request; a fresh Fractal manager is built per response, so no include state leaks between requests (worker-mode safe).
+Paginated collections take any `Contract\PagedResultInterface`. A fresh Fractal manager is built per response, so no include state leaks between requests (worker-mode safe).
+
+## Query features
+
+The JSON:API query families are parsed by `Request\Query\JsonApiQuery::fromRequest()` and honoured per request:
+
+- **`?include=`** — include paths are validated against the root transformer's available + default includes; an unsupported path is a `400` (per spec). Valid paths are passed to Fractal's `parseIncludes`.
+- **`?fields[type]=`** — sparse fieldsets, applied to the primary resource *and* included resources via Fractal's `parseFieldsets`. Per the spec, fieldsets restrict relationships too: relationship links are only emitted for relationships named in the type's fieldset.
+- **`?sort=`** — declare a resource's sortable fields on its transformer:
+
+  ```php
+  #[JsonApiSortable('createdAt', 'historicalDate')]
+  class ArtifactTransformer extends TransformerAbstract implements ResourceTransformerInterface
+  ```
+
+  then inject `Request\Query\SortResolver` into the list action and translate the validated sorts into your ordering:
+
+  ```php
+  foreach ($sortResolver->forType(Artifact::class) as $sort) {
+      // $sort->field, $sort->descending ('-' prefix)
+  }
+  ```
+
+  An undeclared sort field is a `400` (per spec). The mapping of field names to a concrete ordering stays in the application.
+- **`?page[number]=` / `?page[size]=`** — parsed onto `JsonApiQuery->pageNumber/pageSize` for the application's pagination resolver; the responder's pagination links emit the same shape (preserving `page[size]`).
+- **`?filter[...]=`** — deliberately not interpreted by the bundle: filter strategy is application-defined. Convention: a list-query DTO with a `filter` property mapped via Symfony's `#[MapQueryString]`, so `?filter[x]=` nests naturally.
+
+## Auto-registered relationship endpoints
+
+Declare a resource's URL prefix and relationships on its transformer:
+
+```php
+#[JsonApiResource(path: '/artifacts')]
+#[JsonApiRelationship('fileUpload')]
+#[JsonApiRelationship('detectedObjects', toMany: true)]
+class ArtifactTransformer extends TransformerAbstract implements ResourceTransformerInterface
+```
+
+then import the route loader (before your attribute controllers, so a hand-written
+route with the same name — e.g. a POST relationship update — wins):
+
+```yaml
+api_relationship_endpoints:
+    resource: .
+    type: stetodd_jsonapi_relationships
+```
+
+Each declaration registers `GET {path}/{id}/relationships/{segment}` (resource
+linkage) and `GET {path}/{id}/{segment}` (full related resource), named to the
+configured `relationship_routes` patterns — the same ones the serializer builds
+relationship links from, so links and endpoints stay in lockstep. The relationship
+data is fetched through the transformer's own Fractal `include{Name}()` method; the
+URL segment is the kebab-cased name (`fileUpload` → `file-upload`, overridable via
+`pathSegment:`).
+
+The application provides one service: an implementation of
+`Contract\RelationshipSourceResolverInterface`, which loads the parent resource by
+id and enforces access control (return `null` → 404; throw an
+`AccessDeniedException` → 403). Alias the interface to your implementation:
+
+```yaml
+Stetodd\JsonApiBundle\Contract\RelationshipSourceResolverInterface:
+    alias: App\Ports\Api\Security\RelationshipSourceResolver
+```
+
+## Error objects
+
+HttpExceptions raised on JSON:API routes are rendered as spec error objects
+(`application/vnd.api+json`):
+
+```json
+{"errors": [{"status": "422", "title": "Unprocessable Entity",
+             "detail": "This value should not be blank.",
+             "source": {"pointer": "/data/attributes/title"}}]}
+```
+
+Validation failures (a `ValidationFailedException` as the exception's `previous`,
+which the mapping attributes and `#[MapQueryString]`/`#[MapRequestPayload]` all
+produce) yield one error per violation, with `source.parameter` for query input on
+safe methods and `source.pointer` for body input. Non-HTTP throwables (genuine
+500s) keep Symfony's default handling, so debug traces survive in dev.
+
+Which routes are covered is decided by route-name prefix:
+
+```yaml
+stetodd_json_api:
+    errors:
+        # enabled: true
+        # route_name_prefixes: ['api_']
+```
+
+## Resource self links
+
+`#[JsonApiResource(path: …)]` also drives each resource's `links.self`: the
+serializer emits `{base_url}{path}/{id}` (e.g. `/geospatial/locations/{id}`)
+instead of Fractal's naive `{base_url}/{type}/{id}`, so transformers don't build
+self links by hand. A `links` key returned from `transform()` still wins — use it
+for resources with non-standard URLs (e.g. `/profile/me`).
 
 ## Requests
 
