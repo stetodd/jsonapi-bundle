@@ -7,6 +7,7 @@ namespace Stetodd\JsonApiBundle;
 use Stetodd\JsonApiBundle\Contract\ResourceTransformerInterface;
 use Stetodd\JsonApiBundle\Contract\RelationshipSourceResolverInterface;
 use Stetodd\JsonApiBundle\Controller\RelationshipController;
+use Stetodd\JsonApiBundle\EventSubscriber\JsonApiContentNegotiationSubscriber;
 use Stetodd\JsonApiBundle\EventSubscriber\JsonApiErrorSubscriber;
 use Stetodd\JsonApiBundle\Request\ArgumentResolver\JsonApiValueResolver;
 use Stetodd\JsonApiBundle\Request\Query\SortResolver;
@@ -39,21 +40,28 @@ final class StetoddJsonApiBundle extends AbstractBundle
                         ->scalarNode('related')->defaultValue('api_{type}_relationship_{relationship}_related')->end()
                     ->end()
                 ->end()
+                ->arrayNode('route_name_prefixes')
+                    ->info('Routes treated as JSON:API endpoints (error rendering + content negotiation)')
+                    ->scalarPrototype()->end()
+                    ->defaultValue(['api_'])
+                ->end()
                 ->arrayNode('errors')
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->booleanNode('enabled')->defaultTrue()->end()
-                        ->arrayNode('route_name_prefixes')
-                            ->scalarPrototype()->end()
-                            ->defaultValue(['api_'])
-                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('content_negotiation')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->booleanNode('enabled')->defaultTrue()->end()
                     ->end()
                 ->end()
             ->end();
     }
 
     /**
-     * @param array{base_url: string, recursion_limit: int, relationship_routes: array{self: string, related: string}, errors: array{enabled: bool, route_name_prefixes: list<string>}} $config
+     * @param array{base_url: string, recursion_limit: int, relationship_routes: array{self: string, related: string}, route_name_prefixes: list<string>, errors: array{enabled: bool}, content_negotiation: array{enabled: bool}} $config
      */
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
@@ -82,7 +90,13 @@ final class StetoddJsonApiBundle extends AbstractBundle
 
         if ($config['errors']['enabled']) {
             $services->set(JsonApiErrorSubscriber::class)
-                ->args([$config['errors']['route_name_prefixes']])
+                ->args([$config['route_name_prefixes']])
+                ->tag('kernel.event_subscriber');
+        }
+
+        if ($config['content_negotiation']['enabled']) {
+            $services->set(JsonApiContentNegotiationSubscriber::class)
+                ->args([$config['route_name_prefixes']])
                 ->tag('kernel.event_subscriber');
         }
 

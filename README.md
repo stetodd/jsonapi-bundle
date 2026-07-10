@@ -118,13 +118,42 @@ produce) yield one error per violation, with `source.parameter` for query input 
 safe methods and `source.pointer` for body input. Non-HTTP throwables (genuine
 500s) keep Symfony's default handling, so debug traces survive in dev.
 
-Which routes are covered is decided by route-name prefix:
+## Content negotiation
+
+Per the spec's server responsibilities, requests on JSON:API routes are rejected
+when they misuse the JSON:API media type itself: a `Content-Type:
+application/vnd.api+json` modified with media type parameters is a `415`, and an
+`Accept` header where **every** instance of the JSON:API media type carries
+parameters is a `406` (`q` is ignored). Other media types — e.g. plain
+`application/json` — pass through untouched. Both rejections render as JSON:API
+error objects.
+
+Which routes count as JSON:API (for error rendering and content negotiation) is
+decided by route-name prefix:
 
 ```yaml
 stetodd_json_api:
+    # route_name_prefixes: ['api_']
     errors:
         # enabled: true
-        # route_name_prefixes: ['api_']
+    content_negotiation:
+        # enabled: true
+```
+
+## Conformance assertions
+
+`Test\JsonApiAssertionsTrait` (requires phpunit in your dev dependencies) provides
+spec-shape assertions for use in any test — one conformance test per surface
+catches structural regressions cheaply:
+
+```php
+use Stetodd\JsonApiBundle\Test\JsonApiAssertionsTrait;
+
+self::assertJsonApiDocument($decoded);          // top-level document rules
+self::assertJsonApiResourceObject($decoded['data'], 'artifact');
+self::assertJsonApiResourceLinkage($decoded['data']);  // relationship endpoints
+self::assertJsonApiErrorDocument($decoded);     // errors[] shape incl. source
+self::assertJsonApiPaginationLinks($decoded);   // self/first/last(/next/prev)
 ```
 
 ## Resource self links

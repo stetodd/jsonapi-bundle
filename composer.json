@@ -18,7 +18,8 @@
         "symfony/validator": "^7.2|^8.0"
     },
     "suggest": {
-        "doctrine/persistence": "Allows transformer resolution to unwrap Doctrine entity proxies"
+        "doctrine/persistence": "Allows transformer resolution to unwrap Doctrine entity proxies",
+        "phpunit/phpunit": "Required to use the Test\\JsonApiAssertionsTrait conformance assertions"
     },
     "autoload": {
         "psr-4": {
